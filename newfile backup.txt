@@ -1036,7 +1036,7 @@ def _sunburst_with_table_html(df_f: pd.DataFrame, *, height: int = 560):
       <tbody id="{dom}-tbody"></tbody>
     </table>
   </div>
-  <div id="{dom}-meta" style="margin-top:6px;color:#64748b;font-size:10px;"></div>
+  <div id="{dom}-meta" style="margin-top:6px;color:#64748b;font-size:12px;"></div>
 </div>
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <script>
@@ -1160,7 +1160,7 @@ with tabs[12]:
         # Optional filter by Activity at the very top
         if "Activity" in reports_df.columns:
             acts_raw = sorted(reports_df["Activity"].dropna().astype(str).unique().tolist())
-            preferred = "SD" if "SD" in acts_raw else (acts_raw[0] if acts_raw else "(All)")
+            preferred = "MS" if "MS" in acts_raw else (acts_raw[0] if acts_raw else "(All)")
             acts = ["(All)"] + acts_raw
             if "activity_select" not in st.session_state:
                 st.session_state["activity_select"] = preferred
@@ -1172,5 +1172,3 @@ with tabs[12]:
         build_submittals_plotly(df_act)
 
     st.markdown("</div>", unsafe_allow_html=True)
-
-
