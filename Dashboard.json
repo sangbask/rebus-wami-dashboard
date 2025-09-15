@@ -1,0 +1,121 @@
+{
+    "Project Summary": [
+        {
+            "Client": "Line Investments & Property L.L.C",
+            "ProjectConsultant": "NEB Engineering Consultancy Office",
+            "Contractor": "Shapoorji Pallonji Mideast L.L.C",
+            "ProjectType": "Construction",
+            "ProjectName": "Khalifa City Mall",
+            "StartDate": "2018-07-01T00:00:00",
+            "EndDate": "2020-08-31T00:00:00",
+            "ForecastDate": "2020-09-30T00:00:00",
+            "Delayed by (Days)": 0,
+            "Project Completion Period (months)": 26.04,
+            "Planned Progress": NaN,
+            "Actual Progress": NaN,
+            "Overall Duration": 792,
+            "Time Elapsed": 792,
+            "Time Remaining": 0,
+            "TimeElapsed%": 100,
+            "TimeRemaining%": 0
+        }
+    ],
+    "Health&Safety": [
+        {
+            "HealthSafetyType": "Period",
+            "StartDate": "2020-10-19T00:00:00",
+            "EndDate": "2020-10-27T00:00:00",
+            "ManHours": 345,
+            "Accidents/First Aid cases": 3,
+            "FAT": 0,
+            "LTI": 0,
+            "SafetyInduction": 7,
+            "In House Training Hrs": 4,
+            "Training (3rdParty)Hrs": 0
+        },
+        {
+            "HealthSafetyType": "Upto Date",
+            "StartDate": "2018-07-01T00:00:00",
+            "EndDate": "2020-08-31T00:00:00",
+            "ManHours": 20607321,
+            "Accidents/First Aid cases": 87,
+            "FAT": 1,
+            "LTI": 2,
+            "SafetyInduction": 32675,
+            "In House Training Hrs": 286524,
+            "Training (3rdParty)Hrs": 8674
+        }
+    ],
+    "SubmittalOverview": [
+        {
+            "SubmittalStatus": "A",
+            "SubmittalCount": 9156
+        },
+        {
+            "SubmittalStatus": "B",
+            "SubmittalCount": 1160
+        },
+        {
+            "SubmittalStatus": "C",
+            "SubmittalCount": 152
+        },
+        {
+            "SubmittalStatus": "D",
+            "SubmittalCount": 306
+        },
+        {
+            "SubmittalStatus": "E",
+            "SubmittalCount": 5
+        },
+        {
+            "SubmittalStatus": "P",
+            "SubmittalCount": 0
+        },
+        {
+            "SubmittalStatus": "UR",
+            "SubmittalCount": 0
+        }
+    ],
+    "SubmittalConstruction": [
+        {
+            "ActivityType": "WIR",
+            "SubmittalCount": 6947
+        },
+        {
+            "ActivityType": "SD",
+            "SubmittalCount": 895
+        },
+        {
+            "ActivityType": "TS",
+            "SubmittalCount": 629
+        },
+        {
+            "ActivityType": "MS",
+            "SubmittalCount": 1910
+        },
+        {
+            "ActivityType": "MIR",
+            "SubmittalCount": 2064
+        }
+    ],
+    "QAQCSubmittal": [
+        {
+            "TechnicalSubmittalType": "PQ",
+            "SubmittalCount": 164
+        },
+        {
+            "TechnicalSubmittalType": "MSS",
+            "SubmittalCount": 8
+        }
+    ],
+    "Closeout": [
+        {
+            "TechnicalSubmittalType": "OMM",
+            "SubmittalCount": 91
+        },
+        {
+            "TechnicalSubmittalType": "Training Manuals",
+            "SubmittalCount": 29
+        }
+    ]
+}
