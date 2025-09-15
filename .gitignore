@@ -1,0 +1,16 @@
+# OS / Python
+.DS_Store
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Temp / backups
+*backup*
+*.bak
+*.swp
+
+# Stray accidental files
+streamlit==*

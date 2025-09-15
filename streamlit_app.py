@@ -13,6 +13,10 @@ import plotly.express as px
 import streamlit as st
 
 
+# Make Cloud behave like local for bigger datasets
+alt.data_transformers.enable("default", max_rows=None)
+
+
 # -------------------- Page / Theme --------------------
 st.set_page_config(
     page_title="CloseoutSoft – WAMI Progress",
