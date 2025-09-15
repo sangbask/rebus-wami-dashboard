@@ -12,19 +12,6 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-# --- IMPORTANT for Streamlit Cloud: enable VegaFusion so Altair charts render with big data ---
-# (This avoids embedding huge datasets in the JSON spec and fixes "chart not showing" in Submittals.)
-try:
-    import vegafusion as vf  # type: ignore
-    if hasattr(vf, "enable"):
-        vf.enable()
-except Exception:
-    try:
-        # Altair v5 fallback registration (no-op if not available)
-        alt.data_transformers.enable("vegafusion")  # type: ignore
-    except Exception:
-        pass
-
 
 # -------------------- Page / Theme --------------------
 st.set_page_config(
@@ -34,9 +21,18 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Altair look (doesn't affect Plotly tabs)
+# Altair theme + cloud-safe renderer config
 try:
     alt.themes.enable("none")
+except Exception:
+    pass
+
+# IMPORTANT: make Altair safer/more reliable on cloud hosts
+try:
+    # avoid hard 5k-row cap silently breaking specs
+    alt.data_transformers.disable_max_rows()
+    # hide vega toolbar/actions
+    alt.renderers.set_embed_options(actions=False)
 except Exception:
     pass
 
@@ -312,22 +308,24 @@ def build_submittals_drilldown(df: pd.DataFrame) -> alt.Chart:
     donut_kwargs = dict(innerRadius=75, outerRadius=120)
 
     disc = (
-        base.transform_aggregate(group_count="count()", groupby=["Discipline"])
-            .transform_joinaggregate(total="sum(group_count)")
-            .transform_calculate(pct="datum.group_count / datum.total")
-            .mark_arc(**donut_kwargs)
-            .encode(
-                theta="group_count:Q",
-                color=alt.Color("Discipline:N", legend=None, scale=alt.Scale(scheme="category20")),
-                tooltip=[
-                    alt.Tooltip("Discipline:N", title="Discipline"),
-                    alt.Tooltip("group_count:Q", title="Count"),
-                    alt.Tooltip("pct:Q", title="Percent", format=".1%"),
-                ],
-            )
-            .add_params(disc_sel)
-            .properties(title="Discipline")
+    base.transform_aggregate(group_count="count()", groupby=["Discipline"])
+        # 👇 FIXED: removed stray quote after group_count
+        .transform_joinaggregate(total="sum(group_count)")
+        .transform_calculate(pct="datum.group_count / datum.total")
+        .mark_arc(**donut_kwargs)
+        .encode(
+            theta="group_count:Q",
+            color=alt.Color("Discipline:N", legend=None, scale=alt.Scale(scheme="category20")),
+            tooltip=[
+                alt.Tooltip("Discipline:N", title="Discipline"),
+                alt.Tooltip("group_count:Q", title="Count"),
+                alt.Tooltip("pct:Q", title="Percent", format=".1%"),
+            ],
+        )
+        .add_params(disc_sel)
+        .properties(title="Discipline")
     )
+
 
     sys = (
         base.transform_filter(disc_sel)
@@ -791,13 +789,8 @@ with tabs[0]:
             tmp, names="Status", hole=0.55, color="Status",
             color_discrete_map=STATUS_COLORS, template=None
             )
-            
-            # keep the % labels inside the donut (optional)
             fig.update_traces(textinfo="percent", textposition="inside")
-            
-            # show legend like the other charts (top, horizontal)
             fig.update_layout(margin=dict(l=8, r=8, t=16, b=16), showlegend=True)
-            
             st.plotly_chart(style_fig(fig, height=240, showlegend=True), use_container_width=True)
 
         else:
@@ -1150,8 +1143,31 @@ def load_reports_df() -> "pd.DataFrame | None":
         st.error("Reports file loaded, but required columns not found. Expect **Discipline, System** (plus Subsystem/Status/Activity if available).")
         return None
 
+    # -------------------- Option 1: shrink dataset for cloud rendering --------------------
+    orig_len = len(df)
+
+    # Normalize dates and take a recent window if available
+    if "SubmittalDate" in df.columns:
+        df["SubmittalDate"] = pd.to_datetime(df["SubmittalDate"], errors="coerce")
+        if df["SubmittalDate"].notna().any():
+            cutoff = df["SubmittalDate"].max() - pd.DateOffset(months=24)
+            recent = df[df["SubmittalDate"] >= cutoff]
+            # Use the recent window if it's still reasonably sized
+            if len(recent) >= 1000:
+                df = recent
+
+    # Safety cap to keep the Altair spec small
+    MAX_ROWS = 5000
+    if len(df) > MAX_ROWS:
+        sort_col = "SubmittalDate" if "SubmittalDate" in df.columns else None
+        if sort_col:
+            df = df.sort_values(sort_col, ascending=False).head(MAX_ROWS).copy()
+        else:
+            df = df.head(MAX_ROWS).copy()
+
     with st.expander("REPORTS DATA", expanded=False):
         st.write(f"Source: **{src or 'unknown'}**")
+        st.write(f"Rows used for charts: **{len(df)}**  (from original **{orig_len}**)")
         st.write("Columns:", list(df.columns))
         st.dataframe(df.head(20), use_container_width=True, hide_index=True)
 
@@ -1177,8 +1193,17 @@ with tabs[12]:
             df_act = reports_df
 
         chart = build_submittals_drilldown(df_act)
-        st.altair_chart(chart, use_container_width=True)
-        st.caption("Tip: Click to drill; double-click a donut to clear that level. The table automatically prefers Subsystem > System > Discipline.")
+
+        # >>> Robust render path for cloud: embed the VL spec directly
+        try:
+            st.vega_lite_chart(chart.to_dict(), use_container_width=True)
+        except Exception as e:
+            # last-resort fallback & visibility
+            st.error("Couldn't render the Submittals chart. Showing first rows instead.")
+            st.caption(str(e))
+            st.dataframe(df_act.head(50), use_container_width=True, hide_index=True)
+
+        st.caption("Tip: Click donuts to drill; double-click a donut to clear that level. The table auto-filters (Subsystem ▶ System ▶ Discipline).")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
