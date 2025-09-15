@@ -27,6 +27,15 @@ try:
 except Exception:
     pass
 
+# Allow large datasets in Altair (fixes Submittals charts not rendering on Cloud)
+try:
+    alt.data_transformers.enable("default", max_rows=None)
+except Exception:
+    try:
+        alt.data_transformers.disable_max_rows()
+    except Exception:
+        pass
+
 # Plotly defaults (avoid old Plotly template crash)
 px.defaults.template = None
 px.defaults.color_discrete_sequence = px.colors.qualitative.Pastel
@@ -123,7 +132,7 @@ st.markdown(
     background:#FFFFFF; border:1px solid #E6ECF4; border-radius:14px; padding:12px 14px;
     box-shadow:0 1px 2px rgba(16,24,40,.04), 0 8px 16px rgba(16,24,40,.06);
   }
-    /* KPI banner: pill + bold value */
+  /* KPI banner: pill + bold value */
   .pill{
     display:inline-flex; align-items:center; gap:6px;
     padding:4px 12px; border-radius:9999px; font-weight:800; font-size:12px;
@@ -136,7 +145,6 @@ st.markdown(
   .kpi-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
   .kpi-label{ color:#334155; font-weight:900; font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
   .kpi-val{ font-size:22px; font-weight:900; color:#0B1220; line-height:1.05; }
-
 
   .card{ background:#FFF; border:1px solid #E6ECF4; border-radius:12px; padding:12px; box-shadow:0 1px 2px rgba(16,24,40,.04); }
 
@@ -775,18 +783,12 @@ with tabs[0]:
             tmp = f_ncrs.copy()
             tmp["Status"] = tmp["Status"].fillna("(Blank)")
             fig = px.pie(
-            tmp, names="Status", hole=0.55, color="Status",
-            color_discrete_map=STATUS_COLORS, template=None
+                tmp, names="Status", hole=0.55, color="Status",
+                color_discrete_map=STATUS_COLORS, template=None
             )
-            
-            # keep the % labels inside the donut (optional)
             fig.update_traces(textinfo="percent", textposition="inside")
-            
-            # show legend like the other charts (top, horizontal)
             fig.update_layout(margin=dict(l=8, r=8, t=16, b=16), showlegend=True)
-            
             st.plotly_chart(style_fig(fig, height=240, showlegend=True), use_container_width=True)
-
         else:
             st.caption("No NCR data in the selected filters.")
         st.markdown("</div>", unsafe_allow_html=True)
@@ -904,7 +906,7 @@ with tabs[5]:
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-# =============== AG Summary ===============
+# =============== AG vs CloseoutSoft ===============
 with tabs[6]:
     c1, c2 = st.columns(2)
     with c1:
