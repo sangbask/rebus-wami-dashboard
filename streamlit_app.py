@@ -27,12 +27,14 @@ try:
 except Exception:
     pass
 
-# Allow large datasets in Altair (fixes Submittals charts not rendering on Cloud)
+# --- IMPORTANT: allow big datasets in Altair (fixes blank charts on Cloud) ---
 try:
-    alt.data_transformers.enable("default", max_rows=None)
+    # Altair v5
+    alt.data_transformers.disable_max_rows()
 except Exception:
     try:
-        alt.data_transformers.disable_max_rows()
+        # Older Altair fallback
+        alt.data_transformers.enable("default", max_rows=None)
     except Exception:
         pass
 
@@ -165,25 +167,12 @@ st.markdown(
   .brand-bar { margin: 8px 0 12px 0; padding: 4px 0; }
   .brand-row { display:flex; align-items:center; justify-content:space-between; min-height:52px; }
 
-  /* NEW: smaller logo size */
-  .rebus-logo {
-    height:44px;
-    width:auto;
-    display:block;
-  }
-
-  /* NEW: larger, crisp circular avatar */
+  .rebus-logo { height:44px; width:auto; display:block; }
   .avatar {
-    width:44px;
-    height:44px;
-    border-radius:9999px;
-    object-fit:cover;
-    border:1px solid #E6ECF4;
-    box-shadow:0 1px 2px rgba(16,24,40,.04);
-    background:#F1F5F9;
+    width:44px; height:44px; border-radius:9999px; object-fit:cover;
+    border:1px solid #E6ECF4; box-shadow:0 1px 2px rgba(16,24,40,.04); background:#F1F5F9;
   }
-
-  .avatar-fallback { display:none !important; } /* no longer used */
+  .avatar-fallback { display:none !important; }
 </style>
 """,
     unsafe_allow_html=True,
@@ -209,7 +198,6 @@ def _logo_data_uri() -> str | None:
 
 def _profile_data_uri() -> str | None:
     here = Path(__file__).parent if "__file__" in globals() else Path(".")
-    # Prioritize profile.jpg first (your case), then other common names
     for name in ("profile.jpg", "profile.png", "avatar.png", "user.png", "avatar.jpg"):
         uri = _img_to_data_uri(here / name)
         if uri:
@@ -218,7 +206,6 @@ def _profile_data_uri() -> str | None:
 
 
 def _actor_svg_data_uri() -> str:
-    # Default actor-style avatar if no local profile image exists
     svg = """<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>
       <defs>
         <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>
@@ -295,7 +282,6 @@ def build_submittals_drilldown(df: pd.DataFrame) -> alt.Chart:
     # --- Named Selections (Altair v4/v5) ---
     def _sel(fields, name):
         if hasattr(alt, "selection_point"):
-            # single-select; dblclick to clear
             return alt.selection_point(name=name, fields=fields, empty=True, clear="dblclick", toggle=False)
         return alt.selection_single(fields=fields, empty="all", name=name)
 
@@ -374,22 +360,19 @@ def build_submittals_drilldown(df: pd.DataFrame) -> alt.Chart:
     row_step = 26
     page_limit = 15
 
-    # Visibility conditions (use Vega selection stores)
     cond_sub_active  = "length(data('sub_sel_store')) > 0"
     cond_sys_active  = "(length(data('sub_sel_store')) == 0) && (length(data('sys_sel_store')) > 0)"
     cond_disc_active = "(length(data('sub_sel_store')) == 0) && (length(data('sys_sel_store')) == 0) && (length(data('disc_sel_store')) > 0)"
     cond_none        = "(length(data('sub_sel_store')) == 0) && (length(data('sys_sel_store')) == 0) && (length(data('disc_sel_store')) == 0)"
 
     def _table_layer(row_filter, visible_when_expr):
-        # Base rows
         base_tbl = alt.Chart(df)
-        # Only apply a row filter if one is provided (None means "show all")
         if row_filter is not None:
             base_tbl = base_tbl.transform_filter(row_filter)
 
         base_tbl = (
             base_tbl
-              .transform_filter(visible_when_expr)  # show this layer only in its mode
+              .transform_filter(visible_when_expr)
               .transform_window(
                   row_number="row_number()",
                   sort=[{"field": "SubmittalDate", "order": "descending"}] if "SubmittalDate" in df.columns else []
@@ -422,7 +405,6 @@ def build_submittals_drilldown(df: pd.DataFrame) -> alt.Chart:
         )
         return grid + cells
 
-    # Header band (common)
     header_df = pd.DataFrame({"Column": present_cols, "Label": present_cols})
     header_bg = (
         alt.Chart(header_df)
@@ -437,11 +419,10 @@ def build_submittals_drilldown(df: pd.DataFrame) -> alt.Chart:
           .properties(width=table_width, height=32)
     )
 
-    # Build the 4 fallback layers
     layer_sub  = _table_layer(sub_sel,  cond_sub_active)
     layer_sys  = _table_layer(sys_sel,  cond_sys_active)
     layer_disc = _table_layer(disc_sel, cond_disc_active)
-    layer_all  = _table_layer(None,     cond_none)  # no selection → show all
+    layer_all  = _table_layer(None,     cond_none)
 
     table = alt.vconcat(header_bg + header_text,
                         layer_sub + layer_sys + layer_disc + layer_all,
@@ -783,8 +764,8 @@ with tabs[0]:
             tmp = f_ncrs.copy()
             tmp["Status"] = tmp["Status"].fillna("(Blank)")
             fig = px.pie(
-                tmp, names="Status", hole=0.55, color="Status",
-                color_discrete_map=STATUS_COLORS, template=None
+            tmp, names="Status", hole=0.55, color="Status",
+            color_discrete_map=STATUS_COLORS, template=None
             )
             fig.update_traces(textinfo="percent", textposition="inside")
             fig.update_layout(margin=dict(l=8, r=8, t=16, b=16), showlegend=True)
@@ -906,7 +887,7 @@ with tabs[5]:
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-# =============== AG vs CloseoutSoft ===============
+# =============== AG Summary ===============
 with tabs[6]:
     c1, c2 = st.columns(2)
     with c1:
@@ -1070,30 +1051,46 @@ def load_reports_df() -> "pd.DataFrame | None":
         df = df[[c for c in keep if c in df.columns]].copy()
         return df
 
-    # 1) Try local files
+    # 1) Try local files (case-insensitive search in app dir)
     here = Path(__file__).parent if "__file__" in globals() else Path(".")
     discovered, found_name = None, None
-    for name in ("Reports.json", "Reports.xlsx"):
-        p = here / name
-        if p.exists():
-            try:
-                if p.suffix.lower() == ".json":
-                    with p.open("r", encoding="utf-8") as f:
-                        j = _json.load(f)
-                    if isinstance(j, list):
-                        discovered = pd.DataFrame(j)
-                    elif isinstance(j, dict):
-                        list_key = next((k for k, v in j.items() if isinstance(v, list)), None)
-                        discovered = pd.DataFrame(j[list_key]) if list_key else pd.json_normalize(j)
-                    else:
-                        discovered = pd.read_json(p)
-                else:
-                    discovered = pd.read_excel(p, sheet_name=0)
-                found_name = name
-            except Exception as e:
-                st.warning(f"Found {name} but failed to read it: {e}")
-                discovered = None
+
+    # Gather candidates ignoring case
+    candidates = {}
+    try:
+        for p in here.iterdir():
+            nm = p.name.lower()
+            if nm in ("reports.json", "reports.xlsx"):
+                candidates[nm] = p
+    except Exception:
+        pass
+
+    # Prefer JSON over XLSX if both exist
+    preferred_order = ["reports.json", "reports.xlsx"]
+    chosen = None
+    for nm in preferred_order:
+        if nm in candidates:
+            chosen = candidates[nm]
             break
+
+    if chosen and chosen.exists():
+        try:
+            if chosen.suffix.lower() == ".json":
+                with chosen.open("r", encoding="utf-8") as f:
+                    j = _json.load(f)
+                if isinstance(j, list):
+                    discovered = pd.DataFrame(j)
+                elif isinstance(j, dict):
+                    list_key = next((k for k, v in j.items() if isinstance(v, list)), None)
+                    discovered = pd.DataFrame(j[list_key]) if list_key else pd.json_normalize(j)
+                else:
+                    discovered = pd.read_json(chosen)
+            else:
+                discovered = pd.read_excel(chosen, sheet_name=0)
+            found_name = chosen.name
+        except Exception as e:
+            st.warning(f"Found {chosen.name} but failed to read it: {e}")
+            discovered = None
 
     # 2) Uploader (always visible)
     uploaded = st.file_uploader(
