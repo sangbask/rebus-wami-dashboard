@@ -11,6 +11,8 @@ venv/
 .vscode/
 
 # Streamlit cache
-.streamlit/**cache*/
-
+.streamlit/**cache*
+# Data you don't want in git (keep if you DO)
+Reports.json
+Reports.xlsx
 

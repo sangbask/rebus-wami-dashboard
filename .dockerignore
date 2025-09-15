@@ -1,8 +1,9 @@
 .git
-.gitignore
+.gcloudignore
+**/__pycache__/
+**/*.pyc
+node_modules/
 .DS_Store
-__pycache__/
-.venv/
-venv/
-.streamlit/**cache*/
-
+*.log
+# Optional: exclude large local docs
+*.pdf
