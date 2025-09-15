@@ -12,9 +12,18 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-
-# Make Cloud behave like local for bigger datasets
-alt.data_transformers.enable("default", max_rows=None)
+# --- IMPORTANT for Streamlit Cloud: enable VegaFusion so Altair charts render with big data ---
+# (This avoids embedding huge datasets in the JSON spec and fixes "chart not showing" in Submittals.)
+try:
+    import vegafusion as vf  # type: ignore
+    if hasattr(vf, "enable"):
+        vf.enable()
+except Exception:
+    try:
+        # Altair v5 fallback registration (no-op if not available)
+        alt.data_transformers.enable("vegafusion")  # type: ignore
+    except Exception:
+        pass
 
 
 # -------------------- Page / Theme --------------------
@@ -30,15 +39,6 @@ try:
     alt.themes.enable("none")
 except Exception:
     pass
-
-# --- IMPORTANT: allow big datasets in Altair (fixes blank charts on Cloud) ---
-try:
-    alt.data_transformers.disable_max_rows()  # Altair v5
-except Exception:
-    try:
-        alt.data_transformers.enable("default", max_rows=None)  # v4 fallback
-    except Exception:
-        pass
 
 # Plotly defaults (avoid old Plotly template crash)
 px.defaults.template = None
@@ -136,7 +136,7 @@ st.markdown(
     background:#FFFFFF; border:1px solid #E6ECF4; border-radius:14px; padding:12px 14px;
     box-shadow:0 1px 2px rgba(16,24,40,.04), 0 8px 16px rgba(16,24,40,.06);
   }
-  /* KPI banner: pill + bold value */
+    /* KPI banner: pill + bold value */
   .pill{
     display:inline-flex; align-items:center; gap:6px;
     padding:4px 12px; border-radius:9999px; font-weight:800; font-size:12px;
@@ -149,6 +149,7 @@ st.markdown(
   .kpi-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
   .kpi-label{ color:#334155; font-weight:900; font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
   .kpi-val{ font-size:22px; font-weight:900; color:#0B1220; line-height:1.05; }
+
 
   .card{ background:#FFF; border:1px solid #E6ECF4; border-radius:12px; padding:12px; box-shadow:0 1px 2px rgba(16,24,40,.04); }
 
@@ -169,12 +170,25 @@ st.markdown(
   .brand-bar { margin: 8px 0 12px 0; padding: 4px 0; }
   .brand-row { display:flex; align-items:center; justify-content:space-between; min-height:52px; }
 
-  .rebus-logo { height:44px; width:auto; display:block; }
-  .avatar {
-    width:44px; height:44px; border-radius:9999px; object-fit:cover;
-    border:1px solid #E6ECF4; box-shadow:0 1px 2px rgba(16,24,40,.04); background:#F1F5F9;
+  /* NEW: smaller logo size */
+  .rebus-logo {
+    height:44px;
+    width:auto;
+    display:block;
   }
-  .avatar-fallback { display:none !important; }
+
+  /* NEW: larger, crisp circular avatar */
+  .avatar {
+    width:44px;
+    height:44px;
+    border-radius:9999px;
+    object-fit:cover;
+    border:1px solid #E6ECF4;
+    box-shadow:0 1px 2px rgba(16,24,40,.04);
+    background:#F1F5F9;
+  }
+
+  .avatar-fallback { display:none !important; } /* no longer used */
 </style>
 """,
     unsafe_allow_html=True,
@@ -200,6 +214,7 @@ def _logo_data_uri() -> str | None:
 
 def _profile_data_uri() -> str | None:
     here = Path(__file__).parent if "__file__" in globals() else Path(".")
+    # Prioritize profile.jpg first (your case), then other common names
     for name in ("profile.jpg", "profile.png", "avatar.png", "user.png", "avatar.jpg"):
         uri = _img_to_data_uri(here / name)
         if uri:
@@ -208,6 +223,7 @@ def _profile_data_uri() -> str | None:
 
 
 def _actor_svg_data_uri() -> str:
+    # Default actor-style avatar if no local profile image exists
     svg = """<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>
       <defs>
         <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>
@@ -263,13 +279,7 @@ def build_submittals_drilldown(df: pd.DataFrame) -> alt.Chart:
       - else show all
     """
     if df is None or df.empty:
-        # Always render visible "No data" text
-        return (
-            alt.Chart(pd.DataFrame({"x": [0], "y": [0], "t": ["No data"]}))
-            .mark_text(text="No data", fontSize=14, dy=-10)
-            .encode(x="x:Q", y="y:Q")
-            .properties(width=720, height=120)
-        )
+        return alt.Chart(pd.DataFrame({"x": []})).mark_text(text="No data")
 
     df = df.copy()
 
@@ -290,9 +300,8 @@ def build_submittals_drilldown(df: pd.DataFrame) -> alt.Chart:
     # --- Named Selections (Altair v4/v5) ---
     def _sel(fields, name):
         if hasattr(alt, "selection_point"):
-            # Altair v5
+            # single-select; dblclick to clear
             return alt.selection_point(name=name, fields=fields, empty=True, clear="dblclick", toggle=False)
-        # Altair v4 fallback
         return alt.selection_single(fields=fields, empty="all", name=name)
 
     disc_sel = _sel(["Discipline"], name="disc_sel")
@@ -377,13 +386,15 @@ def build_submittals_drilldown(df: pd.DataFrame) -> alt.Chart:
     cond_none        = "(length(data('sub_sel_store')) == 0) && (length(data('sys_sel_store')) == 0) && (length(data('disc_sel_store')) == 0)"
 
     def _table_layer(row_filter, visible_when_expr):
+        # Base rows
         base_tbl = alt.Chart(df)
+        # Only apply a row filter if one is provided (None means "show all")
         if row_filter is not None:
             base_tbl = base_tbl.transform_filter(row_filter)
 
         base_tbl = (
             base_tbl
-              .transform_filter(visible_when_expr)
+              .transform_filter(visible_when_expr)  # show this layer only in its mode
               .transform_window(
                   row_number="row_number()",
                   sort=[{"field": "SubmittalDate", "order": "descending"}] if "SubmittalDate" in df.columns else []
@@ -416,6 +427,7 @@ def build_submittals_drilldown(df: pd.DataFrame) -> alt.Chart:
         )
         return grid + cells
 
+    # Header band (common)
     header_df = pd.DataFrame({"Column": present_cols, "Label": present_cols})
     header_bg = (
         alt.Chart(header_df)
@@ -430,10 +442,11 @@ def build_submittals_drilldown(df: pd.DataFrame) -> alt.Chart:
           .properties(width=table_width, height=32)
     )
 
+    # Build the 4 fallback layers
     layer_sub  = _table_layer(sub_sel,  cond_sub_active)
     layer_sys  = _table_layer(sys_sel,  cond_sys_active)
     layer_disc = _table_layer(disc_sel, cond_disc_active)
-    layer_all  = _table_layer(None,     cond_none)
+    layer_all  = _table_layer(None,     cond_none)  # no selection → show all
 
     table = alt.vconcat(header_bg + header_text,
                         layer_sub + layer_sys + layer_disc + layer_all,
@@ -778,9 +791,15 @@ with tabs[0]:
             tmp, names="Status", hole=0.55, color="Status",
             color_discrete_map=STATUS_COLORS, template=None
             )
+            
+            # keep the % labels inside the donut (optional)
             fig.update_traces(textinfo="percent", textposition="inside")
+            
+            # show legend like the other charts (top, horizontal)
             fig.update_layout(margin=dict(l=8, r=8, t=16, b=16), showlegend=True)
+            
             st.plotly_chart(style_fig(fig, height=240, showlegend=True), use_container_width=True)
+
         else:
             st.caption("No NCR data in the selected filters.")
         st.markdown("</div>", unsafe_allow_html=True)
@@ -1062,44 +1081,30 @@ def load_reports_df() -> "pd.DataFrame | None":
         df = df[[c for c in keep if c in df.columns]].copy()
         return df
 
-    # 1) Try local files (case-insensitive search in app dir)
+    # 1) Try local files
     here = Path(__file__).parent if "__file__" in globals() else Path(".")
     discovered, found_name = None, None
-
-    candidates = {}
-    try:
-        for p in here.iterdir():
-            nm = p.name.lower()
-            if nm in ("reports.json", "reports.xlsx"):
-                candidates[nm] = p
-    except Exception:
-        pass
-
-    preferred_order = ["reports.json", "reports.xlsx"]
-    chosen = None
-    for nm in preferred_order:
-        if nm in candidates:
-            chosen = candidates[nm]
-            break
-
-    if chosen and chosen.exists():
-        try:
-            if chosen.suffix.lower() == ".json":
-                with chosen.open("r", encoding="utf-8") as f:
-                    j = _json.load(f)
-                if isinstance(j, list):
-                    discovered = pd.DataFrame(j)
-                elif isinstance(j, dict):
-                    list_key = next((k for k, v in j.items() if isinstance(v, list)), None)
-                    discovered = pd.DataFrame(j[list_key]) if list_key else pd.json_normalize(j)
+    for name in ("Reports.json", "Reports.xlsx"):
+        p = here / name
+        if p.exists():
+            try:
+                if p.suffix.lower() == ".json":
+                    with p.open("r", encoding="utf-8") as f:
+                        j = _json.load(f)
+                    if isinstance(j, list):
+                        discovered = pd.DataFrame(j)
+                    elif isinstance(j, dict):
+                        list_key = next((k for k, v in j.items() if isinstance(v, list)), None)
+                        discovered = pd.DataFrame(j[list_key]) if list_key else pd.json_normalize(j)
+                    else:
+                        discovered = pd.read_json(p)
                 else:
-                    discovered = pd.read_json(chosen)
-            else:
-                discovered = pd.read_excel(chosen, sheet_name=0)
-            found_name = chosen.name
-        except Exception as e:
-            st.warning(f"Found {chosen.name} but failed to read it: {e}")
-            discovered = None
+                    discovered = pd.read_excel(p, sheet_name=0)
+                found_name = name
+            except Exception as e:
+                st.warning(f"Found {name} but failed to read it: {e}")
+                discovered = None
+            break
 
     # 2) Uploader (always visible)
     uploaded = st.file_uploader(
@@ -1159,28 +1164,19 @@ with tabs[12]:
     reports_df = load_reports_df()
 
     if reports_df is not None and not reports_df.empty:
-        # Normalize Activity text to avoid trailing/leading spaces mismatches
+        # Only ACTIVITY dropdown (no Discipline/System widgets)
         if "Activity" in reports_df.columns:
-            reports_df["Activity"] = reports_df["Activity"].astype(str).str.strip()
-
-            acts_raw = sorted(reports_df["Activity"].dropna().unique().tolist())
+            acts_raw = sorted(reports_df["Activity"].dropna().astype(str).unique().tolist())
+            preferred = "MS" if "MS" in acts_raw else (acts_raw[0] if acts_raw else "(All)")
             acts = ["(All)"] + acts_raw
-
-            # initialize/reset default cleanly
-            if "activity_select" not in st.session_state or st.session_state["activity_select"] not in acts:
-                st.session_state["activity_select"] = "(All)"
-
+            if "activity_select" not in st.session_state:
+                st.session_state["activity_select"] = preferred
             sel_act = st.selectbox("ACTIVITY", acts, key="activity_select")
             df_act = reports_df if sel_act == "(All)" else reports_df[reports_df["Activity"] == sel_act]
         else:
             df_act = reports_df
 
-        if df_act is None or df_act.empty:
-            st.info("No records match the selected Activity. Choose a different option or '(All)'.")
-            chart = build_submittals_drilldown(pd.DataFrame())  # will show 'No data'
-        else:
-            chart = build_submittals_drilldown(df_act)
-
+        chart = build_submittals_drilldown(df_act)
         st.altair_chart(chart, use_container_width=True)
         st.caption("Tip: Click to drill; double-click a donut to clear that level. The table automatically prefers Subsystem > System > Discipline.")
 
