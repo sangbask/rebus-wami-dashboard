@@ -29,12 +29,10 @@ except Exception:
 
 # --- IMPORTANT: allow big datasets in Altair (fixes blank charts on Cloud) ---
 try:
-    # Altair v5
-    alt.data_transformers.disable_max_rows()
+    alt.data_transformers.disable_max_rows()  # Altair v5
 except Exception:
     try:
-        # Older Altair fallback
-        alt.data_transformers.enable("default", max_rows=None)
+        alt.data_transformers.enable("default", max_rows=None)  # v4 fallback
     except Exception:
         pass
 
@@ -261,7 +259,13 @@ def build_submittals_drilldown(df: pd.DataFrame) -> alt.Chart:
       - else show all
     """
     if df is None or df.empty:
-        return alt.Chart(pd.DataFrame({"x": []})).mark_text(text="No data")
+        # Always render visible "No data" text
+        return (
+            alt.Chart(pd.DataFrame({"x": [0], "y": [0], "t": ["No data"]}))
+            .mark_text(text="No data", fontSize=14, dy=-10)
+            .encode(x="x:Q", y="y:Q")
+            .properties(width=720, height=120)
+        )
 
     df = df.copy()
 
@@ -282,7 +286,9 @@ def build_submittals_drilldown(df: pd.DataFrame) -> alt.Chart:
     # --- Named Selections (Altair v4/v5) ---
     def _sel(fields, name):
         if hasattr(alt, "selection_point"):
+            # Altair v5
             return alt.selection_point(name=name, fields=fields, empty=True, clear="dblclick", toggle=False)
+        # Altair v4 fallback
         return alt.selection_single(fields=fields, empty="all", name=name)
 
     disc_sel = _sel(["Discipline"], name="disc_sel")
@@ -360,6 +366,7 @@ def build_submittals_drilldown(df: pd.DataFrame) -> alt.Chart:
     row_step = 26
     page_limit = 15
 
+    # Visibility conditions (use Vega selection stores)
     cond_sub_active  = "length(data('sub_sel_store')) > 0"
     cond_sys_active  = "(length(data('sub_sel_store')) == 0) && (length(data('sys_sel_store')) > 0)"
     cond_disc_active = "(length(data('sub_sel_store')) == 0) && (length(data('sys_sel_store')) == 0) && (length(data('disc_sel_store')) > 0)"
@@ -1055,7 +1062,6 @@ def load_reports_df() -> "pd.DataFrame | None":
     here = Path(__file__).parent if "__file__" in globals() else Path(".")
     discovered, found_name = None, None
 
-    # Gather candidates ignoring case
     candidates = {}
     try:
         for p in here.iterdir():
@@ -1065,7 +1071,6 @@ def load_reports_df() -> "pd.DataFrame | None":
     except Exception:
         pass
 
-    # Prefer JSON over XLSX if both exist
     preferred_order = ["reports.json", "reports.xlsx"]
     chosen = None
     for nm in preferred_order:
@@ -1150,19 +1155,28 @@ with tabs[12]:
     reports_df = load_reports_df()
 
     if reports_df is not None and not reports_df.empty:
-        # Only ACTIVITY dropdown (no Discipline/System widgets)
+        # Normalize Activity text to avoid trailing/leading spaces mismatches
         if "Activity" in reports_df.columns:
-            acts_raw = sorted(reports_df["Activity"].dropna().astype(str).unique().tolist())
-            preferred = "MS" if "MS" in acts_raw else (acts_raw[0] if acts_raw else "(All)")
+            reports_df["Activity"] = reports_df["Activity"].astype(str).str.strip()
+
+            acts_raw = sorted(reports_df["Activity"].dropna().unique().tolist())
             acts = ["(All)"] + acts_raw
-            if "activity_select" not in st.session_state:
-                st.session_state["activity_select"] = preferred
+
+            # initialize/reset default cleanly
+            if "activity_select" not in st.session_state or st.session_state["activity_select"] not in acts:
+                st.session_state["activity_select"] = "(All)"
+
             sel_act = st.selectbox("ACTIVITY", acts, key="activity_select")
             df_act = reports_df if sel_act == "(All)" else reports_df[reports_df["Activity"] == sel_act]
         else:
             df_act = reports_df
 
-        chart = build_submittals_drilldown(df_act)
+        if df_act is None or df_act.empty:
+            st.info("No records match the selected Activity. Choose a different option or '(All)'.")
+            chart = build_submittals_drilldown(pd.DataFrame())  # will show 'No data'
+        else:
+            chart = build_submittals_drilldown(df_act)
+
         st.altair_chart(chart, use_container_width=True)
         st.caption("Tip: Click to drill; double-click a donut to clear that level. The table automatically prefers Subsystem > System > Discipline.")
 
