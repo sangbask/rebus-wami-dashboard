@@ -165,6 +165,16 @@ st.markdown(
     border:1px solid #E6ECF4; box-shadow:0 1px 2px rgba(16,24,40,.04); background:#F1F5F9;
   }
   .avatar-fallback { display:none !important; }
+
+  /* Slim, link-like buttons for the Clear controls (sidebar & top) */
+  [data-testid="stSidebar"] button, .stApp button[kind="secondary"], .stApp [data-testid="baseButton-secondary"] {
+    padding: 2px 8px !important;
+    font-size: 12px !important;
+    border-radius: 10px !important;
+    background: #ffffff !important;
+    border: 1px solid #E6ECF4 !important;
+    color: #0B1220 !important;
+  }
 </style>
 """,
     unsafe_allow_html=True,
@@ -949,11 +959,6 @@ def load_reports_df() -> "pd.DataFrame | None":
 
 # ----- NEW: single HTML component that draws sunburst + handles table filtering on click (client-side only) -----
 def _sunburst_with_table_html(df_f: pd.DataFrame, *, height: int = 560):
-    """
-    Renders a Plotly Sunburst (Discipline -> System -> Subsystem) and a details table
-    that updates on slice click. Everything happens client-side in HTML/JS so it works
-    on older Streamlit versions (no Streamlit.setComponentValue needed).
-    """
     import json as _json
     import uuid
 
@@ -963,37 +968,28 @@ def _sunburst_with_table_html(df_f: pd.DataFrame, *, height: int = 560):
         if c in df_f.columns:
             df_f[c] = df_f[c].fillna("—").astype(str)
 
-    # stringify dates for the table
     if "SubmittalDate" in df_f.columns:
-        df_f["SubmittalDate"] = pd.to_datetime(df_f["SubmittalDate"], errors="coerce").dt.strftime("%Y-%m-%d %H:%M").fillna("")
+        df_f["SubmittalDate"] = pd.to_datetime(df_f["SubmittalDate"], errors="coerce")\
+                                   .dt.strftime("%Y-%m-%d %H:%M").fillna("")
 
-    # columns to show in the table (use only the ones present)
     cols_pref = ["Discipline","System","Subsystem","Status","SubmittalDate","InternalRefNumber","Company","Building"]
     cols = [c for c in cols_pref if c in df_f.columns]
     records = df_f[cols].to_dict(orient="records")
 
-    # -------- build sunburst hierarchy arrays (ids / parents / labels / values) ----------
-    DELIM = "|||"
-    ROOT = "ROOT"
-
+    DELIM = "|||"; ROOT = "ROOT"
     gcols = [c for c in ["Discipline","System","Subsystem"] if c in df_f.columns]
     rows = [{"id": ROOT, "label": "All", "parent": "", "Count": int(len(df_f))}]
 
     if gcols:
-        # Level 1
         lvl1 = df_f.groupby([gcols[0]], dropna=False).size().reset_index(name="Count")
         for _, r in lvl1.iterrows():
             disc = str(r[gcols[0]])
             rows.append({"id": disc, "label": disc, "parent": ROOT, "Count": int(r["Count"])})
-
-        # Level 2
         if len(gcols) > 1:
             lvl2 = df_f.groupby(gcols[:2], dropna=False).size().reset_index(name="Count")
             for _, r in lvl2.iterrows():
                 disc = str(r[gcols[0]]); sys = str(r[gcols[1]])
                 rows.append({"id": DELIM.join([disc, sys]), "label": sys, "parent": disc, "Count": int(r["Count"])})
-
-        # Level 3
         if len(gcols) > 2:
             lvl3 = df_f.groupby(gcols[:3], dropna=False).size().reset_index(name="Count")
             for _, r in lvl3.iterrows():
@@ -1002,37 +998,28 @@ def _sunburst_with_table_html(df_f: pd.DataFrame, *, height: int = 560):
                     "id": DELIM.join([disc, sys, sub]),
                     "label": sub,
                     "parent": DELIM.join([disc, sys]),
-                    "Count": int(r["Count"])
-                })
+                    "Count": int(r["Count"])}
+                )
 
     sun = pd.DataFrame(rows)
-    ids     = sun["id"].tolist()
-    labels  = sun["label"].tolist()
-    parents = sun["parent"].tolist()
-    values  = sun["Count"].tolist()
-
-    # Safe JSON payloads for JS
-    js_ids     = _json.dumps(ids)
-    js_labels  = _json.dumps(labels)
-    js_parents = _json.dumps(parents)
-    js_values  = _json.dumps(values)
+    js_ids     = _json.dumps(sun["id"].tolist())
+    js_labels  = _json.dumps(sun["label"].tolist())
+    js_parents = _json.dumps(sun["parent"].tolist())
+    js_values  = _json.dumps(sun["Count"].tolist())
     js_cols    = _json.dumps(cols)
     js_rows    = _json.dumps(records)
 
     dom = f"sb-{uuid.uuid4().hex[:8]}"
     _html = f"""
-<div id="{dom}" style="width:100%;font: 13px/1.4 -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Inter, Arial;">
+<div id="{dom}" style="width:100%;font:13px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Inter,Arial;">
+  <!-- No extra 'Submittals' title here to avoid duplication -->
   <div style="display:flex;align-items:center;gap:.5rem;margin:2px 0 8px 0;">
-    <strong>Submittals</strong>
     <span id="{dom}-badge" style="background:#eef2f7;border:1px solid #e6ecf4;border-radius:9999px;padding:2px 8px;font-size:12px;">All</span>
-    <button id="{dom}-clear" style="margin-left:auto;border:1px solid #e6ecf4;background:#fff;padding:4px 10px;border-radius:8px;cursor:pointer;">Clear</button>
   </div>
   <div id="{dom}-chart" style="width:100%;height:{height-220}px;"></div>
   <div style="margin-top:8px;border:1px solid #e6ecf4;border-radius:12px;overflow:hidden;">
     <table id="{dom}-table" style="width:100%;border-collapse:collapse;border-spacing:0;">
-      <thead style="background:#f8fafc;">
-        <tr id="{dom}-thead"></tr>
-      </thead>
+      <thead style="background:#f8fafc;"><tr id="{dom}-thead"></tr></thead>
       <tbody id="{dom}-tbody"></tbody>
     </table>
   </div>
@@ -1041,129 +1028,164 @@ def _sunburst_with_table_html(df_f: pd.DataFrame, *, height: int = 560):
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <script>
 (function(){{
-  const DELIM = "{DELIM}";
-  const ROOT  = "{ROOT}";
-  const ids     = {js_ids};
-  const labels  = {js_labels};
-  const parents = {js_parents};
-  const values  = {js_values};
-  const COLS    = {js_cols};
-  const ROWS    = {js_rows};
+  const DELIM="{DELIM}", ROOT="{ROOT}";
+  const ids={js_ids}, labels={js_labels}, parents={js_parents}, values={js_values};
+  const COLS={js_cols}, ROWS={js_rows};
+  const chartEl=document.getElementById("{dom}-chart");
+  const badgeEl=document.getElementById("{dom}-badge");
+  const metaEl=document.getElementById("{dom}-meta");
+  const thead=document.getElementById("{dom}-thead");
+  const tbody=document.getElementById("{dom}-tbody");
 
-  const chartEl = document.getElementById("{dom}-chart");
-  const badgeEl = document.getElementById("{dom}-badge");
-  const metaEl  = document.getElementById("{dom}-meta");
-  const thead   = document.getElementById("{dom}-thead");
-  const tbody   = document.getElementById("{dom}-tbody");
-  const clearBtn= document.getElementById("{dom}-clear");
-
-  // header
   thead.innerHTML = COLS.map(c => `<th style="text-align:left;padding:10px 12px;border-bottom:1px solid #e6ecf4;color:#0f172a;font-weight:700;">${{c}}</th>`).join("");
 
   function renderTable(rows){{
-    const MAX = 2000; // cap for very large data
-    const r = rows.slice(0, MAX);
-    tbody.innerHTML = r.map(obj => {{
-      return `<tr>` + COLS.map(c => `<td style="padding:8px 12px;border-bottom:1px solid #eef2f7;">${{(obj[c] ?? "")}}</td>`).join("") + `</tr>`;
-    }}).join("");
+    const MAX=2000; const r=rows.slice(0,MAX);
+    tbody.innerHTML = r.map(obj => `<tr>`+COLS.map(c=>`<td style="padding:8px 12px;border-bottom:1px solid #eef2f7;">${{obj[c]??""}}</td>`).join("")+`</tr>`).join("");
     metaEl.textContent = `Showing ${{r.length}} of ${{rows.length}} row(s).`;
     if (window.Streamlit && window.Streamlit.setFrameHeight) {{
       window.Streamlit.setFrameHeight(document.documentElement.scrollHeight);
     }}
   }}
-
   function filterRows(id){{
-    if (!id || id === ROOT) {{
-      badgeEl.textContent = "All";
-      renderTable(ROWS);
-      return;
-    }}
-    const parts = id.split(DELIM);
-    let filtered = ROWS;
-    if (parts[0]) filtered = filtered.filter(x => x["Discipline"] === parts[0]);
-    if (parts[1]) filtered = filtered.filter(x => x["System"] === parts[1]);
-    if (parts[2]) filtered = filtered.filter(x => x["Subsystem"] === parts[2]);
-
-    const nice = parts.join(" > ");
-    badgeEl.textContent = nice;
+    if (!id || id===ROOT) {{ badgeEl.textContent="All"; renderTable(ROWS); return; }}
+    const parts=id.split(DELIM);
+    let filtered=ROWS;
+    if (parts[0]) filtered=filtered.filter(x=>x["Discipline"]===parts[0]);
+    if (parts[1]) filtered=filtered.filter(x=>x["System"]===parts[1]);
+    if (parts[2]) filtered=filtered.filter(x=>x["Subsystem"]===parts[2]);
+    badgeEl.textContent=parts.join(" > ");
     renderTable(filtered);
   }}
-
-  // initial render
   renderTable(ROWS);
-
-  // draw sunburst
-  const data = [{{
-    type: "sunburst",
-    ids: ids, labels: labels, parents: parents, values: values,
-    branchvalues: "total", maxdepth: 3,
-    hovertemplate: "%{{label}}<br>%{{value}} items<extra></extra>"
-  }}];
-  const layout = {{margin:{{l:4,r:4,t:4,b:4}}, paper_bgcolor:"#fff", plot_bgcolor:"#fff"}};
-  const config = {{displaylogo:false,responsive:true}};
-  Plotly.newPlot(chartEl, data, layout, config).then(() => {{
-    if (window.Streamlit && window.Streamlit.setFrameHeight) {{
-      window.Streamlit.setFrameHeight(document.documentElement.scrollHeight);
-    }}
-  }});
-
+  const data=[{{type:"sunburst",ids:ids,labels:labels,parents:parents,values:values,
+                 branchvalues:"total",maxdepth:3,
+                 hovertemplate:"%{{label}}<br>%{{value}} items<extra></extra>"}}];
+  const layout={{margin:{{l:4,r:4,t:4,b:4}},paper_bgcolor:"#fff",plot_bgcolor:"#fff"}};
+  const config={{displaylogo:false,responsive:true}};
+  Plotly.newPlot(chartEl,data,layout,config);
   chartEl.on("plotly_click", ev => {{
-    const pt = ev?.points?.[0]; const id = pt?.id || ROOT;
-    filterRows(String(id));
+    const id = String(ev?.points?.[0]?.id || ROOT);
+    filterRows(id);
   }});
-
-  clearBtn.addEventListener("click", () => filterRows(ROOT));
 }})();
 </script>
 """
     return components.html(_html, height=height, scrolling=True)
 
-
 def build_submittals_plotly(df: pd.DataFrame):
-    """
-    Dropdown drilldown happens in Streamlit (Discipline/System/Subsystem).
-    The click-to-filter behavior and the details table are handled entirely in the HTML.
-    """
     df = pd.DataFrame(df)
-
-    # Clean up nulls for UI
     for col in ("Discipline","System","Subsystem","Status","Activity"):
         if col in df.columns:
             df[col] = df[col].fillna("—").astype(str)
 
-    st.subheader("Submittals")
+    # --- NEW: one-time init for this tab (enforce '(All)' on first load) ---
+    if "subm_initialized" not in st.session_state:
+        st.session_state["subm_disc"] = "(All)"
+        st.session_state["subm_sys"]  = "(All)"
+        st.session_state["subm_sub"]  = "(All)"
+        st.session_state["subm_initialized"] = True
 
-    # Dropdown drilldown (server-side pre-filter)
+    # --- existing: handle reset BEFORE widgets are created ---
+    if st.session_state.get("reset_submittals", False):
+        st.session_state.update({
+            "subm_disc": "(All)",
+            "subm_sys":  "(All)",
+            "subm_sub":  "(All)",
+            "reset_submittals": False,
+        })
+        st.rerun()
+
+    # Minimal CSS for the title & activity pill
+    st.markdown("""
+    <style>
+      .subm-title{font-size:16px;font-weight:700;margin:0;}
+      .subm-pill{
+        display:inline-block;margin:6px 0 10px 0;padding:4px 10px;font-size:12px;
+        background:#EEF2F7;color:#0F172A;border:1px solid #E6ECF4;border-radius:9999px;
+      }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ---------------- Sidebar: Title + Clear (link) ----------------
+    sb1, sb2 = st.sidebar.columns([4, 1])
+    with sb1:
+        st.markdown('<div class="subm-title">Submittals</div>', unsafe_allow_html=True)
+    with sb2:
+        if st.sidebar.button("Clear", key="subm_clear_sb", help="Reset all to (All)"):
+            st.session_state["reset_submittals"] = True
+            st.rerun()
+
+    # ---- helper ----
+    def _safe_index(val, options): return options.index(val) if val in options else 0
+
+    # ---- Discipline ----
     disc_opts = ["(All)"] + (sorted(df["Discipline"].unique()) if "Discipline" in df.columns else [])
-    sel_disc = st.selectbox("Discipline", disc_opts, index=0, key="subm_disc")
-
+    if st.session_state.get("subm_disc") not in disc_opts:
+        st.session_state["subm_disc"] = "(All)"
+    sel_disc = st.sidebar.selectbox(
+        "Discipline",
+        disc_opts,
+        index=_safe_index(st.session_state.get("subm_disc", "(All)"), disc_opts),
+        key="subm_disc",
+    )
     df1 = df if sel_disc == "(All)" or "Discipline" not in df.columns else df[df["Discipline"] == sel_disc]
 
+    # ---- System (depends on Discipline) ----
     sys_opts = ["(All)"] + (sorted(df1["System"].unique()) if "System" in df1.columns else [])
-    sel_sys = st.selectbox("System", sys_opts, index=0, key="subm_sys")
-
+    if st.session_state.get("subm_sys") not in sys_opts:
+        st.session_state["subm_sys"] = "(All)"
+    sel_sys = st.sidebar.selectbox(
+        "System",
+        sys_opts,
+        index=_safe_index(st.session_state.get("subm_sys", "(All)"), sys_opts),
+        key="subm_sys",
+    )
     df2 = df1 if sel_sys == "(All)" or "System" not in df1.columns else df1[df1["System"] == sel_sys]
 
+    # ---- Subsystem (depends on System) ----
     sub_opts = ["(All)"] + (sorted(df2["Subsystem"].unique()) if "Subsystem" in df2.columns else [])
-    sel_sub = st.selectbox("Subsystem", sub_opts, index=0, key="subm_sub")
+    if st.session_state.get("subm_sub") not in sub_opts:
+        st.session_state["subm_sub"] = "(All)"
+    sel_sub = st.sidebar.selectbox(
+        "Subsystem",
+        sub_opts,
+        index=_safe_index(st.session_state.get("subm_sub", "(All)"), sub_opts),
+        key="subm_sub",
+    )
 
+    # -------- filtered data for chart/table --------
     df_f = df2 if sel_sub == "(All)" or "Subsystem" not in df2.columns else df2[df2["Subsystem"] == sel_sub]
 
-    # Render the sunburst + interactive table in one HTML block
+    # ---------------- Main: single title + Clear (link) ----------------
+    c1, c2 = st.columns([8, 1])
+    with c1:
+        st.markdown('<div class="subm-title">Submittals</div>', unsafe_allow_html=True)
+    with c2:
+        if st.button("Clear", key="subm_clear_top", help="Reset all to (All)"):
+            st.session_state["reset_submittals"] = True
+            st.rerun()
+
+    # Show current Activity selection as a small pill ONLY when not "(All)"
+    current_act = st.session_state.get("activity_select", "(All)")
+    if current_act != "(All)":
+        st.markdown(f'<span class="subm-pill">{current_act}</span>', unsafe_allow_html=True)
+
+    # ---------------- Chart + Table ----------------
     _sunburst_with_table_html(df_f, height=560)
+
 
 
 with tabs[12]:
     st.markdown('<div class="card">', unsafe_allow_html=True)
     reports_df = load_reports_df()
     if reports_df is not None and not reports_df.empty:
-        # Optional filter by Activity at the very top
+        # Optional filter by Activity at the very top  (default = "(All)")
         if "Activity" in reports_df.columns:
             acts_raw = sorted(reports_df["Activity"].dropna().astype(str).unique().tolist())
-            preferred = "SD" if "SD" in acts_raw else (acts_raw[0] if acts_raw else "(All)")
             acts = ["(All)"] + acts_raw
             if "activity_select" not in st.session_state:
-                st.session_state["activity_select"] = preferred
+                st.session_state["activity_select"] = "(All)"
             sel_act = st.selectbox("Activity", acts, key="activity_select")
             df_act = reports_df if sel_act == "(All)" else reports_df[reports_df["Activity"] == sel_act]
         else:
@@ -1172,5 +1194,3 @@ with tabs[12]:
         build_submittals_plotly(df_act)
 
     st.markdown("</div>", unsafe_allow_html=True)
-
-
